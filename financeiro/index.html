@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Painel de controle financeiro pessoal: receitas, despesas, parcelamentos e compromissos futuros.">
+<title>Caixa · Controle financeiro pessoal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============ PORTA DE ENTRADA (PIN) ============
+     Some sozinha se o app não estiver configurado com Supabase
+     (ex.: abrindo o index.html direto do computador, sem internet). -->
+<div class="pingate" id="pinGate" hidden>
+  <form class="pingate__card" id="pinForm" novalidate>
+    <span class="pingate__mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 17.5 9 11l4 4 8-8.5"/><path d="M15 6.5h6v6"/>
+      </svg>
+    </span>
+    <h1>Caixa</h1>
+    <p class="pingate__sub" id="pinSub">Digite o PIN para acessar seus dados neste aparelho.</p>
+    <input type="password" inputmode="numeric" id="pinInput" placeholder="PIN" autocomplete="off" autofocus>
+    <p class="error" id="pinError"></p>
+    <button class="btn btn--primary" type="submit" id="pinSubmit">Entrar</button>
+  </form>
+</div>
+
+<!-- ============ ESTRUTURA GERAL ============ -->
+<div class="app">
+
+  <!-- ---------- Barra lateral ---------- -->
+  <aside class="rail" id="rail">
+    <div class="rail__brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17.5 9 11l4 4 8-8.5"/><path d="M15 6.5h6v6"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>Caixa</strong>
+        <small>Controle financeiro</small>
+      </span>
+    </div>
+
+    <nav class="rail__nav" aria-label="Seções">
+      <button class="navlink is-active" data-view="dashboard">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg>
+        <span>Painel</span>
+      </button>
+      <button class="navlink" data-view="transactions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+        <span>Lançamentos</span>
+      </button>
+      <button class="navlink" data-view="future">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 8.5h17M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>Futuro</span>
+      </button>
+    </nav>
+
+    <div class="rail__foot">
+      <button class="rail__action" id="btnTheme" type="button">
+        <span class="rail__action-icon" aria-hidden="true">◐</span>
+        <span>Tema</span>
+      </button>
+      <button class="rail__action" id="btnData" type="button">
+        <span class="rail__action-icon" aria-hidden="true">⛁</span>
+        <span>Dados</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ---------- Conteúdo ---------- -->
+  <main class="main">
+
+    <header class="topbar">
+      <div class="topbar__left">
+        <h1 class="topbar__title" id="viewTitle">Painel</h1>
+        <p class="topbar__sub" id="viewSub">Visão do mês selecionado</p>
+      </div>
+
+      <div class="topbar__right">
+        <div class="monthpick" role="group" aria-label="Selecionar mês">
+          <button type="button" id="prevMonth" aria-label="Mês anterior">‹</button>
+          <button type="button" class="monthpick__label" id="monthLabel">—</button>
+          <button type="button" id="nextMonth" aria-label="Próximo mês">›</button>
+        </div>
+        <button class="btn btn--primary" id="btnNew" type="button">
+          <span aria-hidden="true">+</span> Novo lançamento
+        </button>
+      </div>
+    </header>
+
+    <!-- ================= PAINEL ================= -->
+    <section class="view is-active" id="view-dashboard">
+
+      <div class="hero">
+        <article class="balance">
+          <p class="balance__label">Saldo de <span id="balanceMonth">—</span></p>
+          <p class="balance__value" id="balanceValue">R$ 0,00</p>
+          <p class="balance__hint" id="balanceHint">Receitas menos despesas do mês</p>
+          <div class="balance__bar" aria-hidden="true">
+            <span class="balance__bar-in" id="barIn"></span>
+            <span class="balance__bar-out" id="barOut"></span>
+          </div>
+          <div class="balance__split">
+            <div><span class="dot dot--in"></span>Entradas <b id="heroIn">R$ 0,00</b></div>
+            <div><span class="dot dot--out"></span>Saídas <b id="heroOut">R$ 0,00</b></div>
+          </div>
+        </article>
+
+        <div class="tiles">
+          <article class="tile tile--in">
+            <p class="tile__label">Receitas</p>
+            <p class="tile__value" id="cardIncome">R$ 0,00</p>
+            <p class="tile__foot" id="cardIncomeFoot">nenhuma entrada</p>
+          </article>
+          <article class="tile tile--out">
+            <p class="tile__label">Despesas</p>
+            <p class="tile__value" id="cardExpense">R$ 0,00</p>
+            <p class="tile__foot" id="cardExpenseFoot">nenhuma saída</p>
+          </article>
+          <article class="tile tile--due">
+            <p class="tile__label">Despesas previstas</p>
+            <p class="tile__value" id="cardUpcoming">R$ 0,00</p>
+            <p class="tile__foot">ainda a vencer neste mês</p>
+          </article>
+          <article class="tile tile--count">
+            <p class="tile__label">Lançamentos</p>
+            <p class="tile__value" id="cardCount">0</p>
+            <p class="tile__foot" id="cardCountFoot">no mês</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="grid grid--2">
+        <section class="panel panel--wide">
+          <header class="panel__head">
+            <h2>Receitas e despesas</h2>
+            <p>Últimos 6 meses</p>
+          </header>
+          <div class="panel__body" id="chartBars"></div>
+        </section>
+
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Gastos por categoria</h2>
+            <p id="catMonth">—</p>
+          </header>
+          <div class="panel__body">
+            <div class="donutwrap">
+              <div id="chartDonut" class="donutwrap__chart"></div>
+              <ul class="legend" id="catLegend"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid grid--2">
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Gastos por forma de pagamento</h2>
+            <p>Onde o dinheiro saiu no mês</p>
+          </header>
+          <div class="panel__body" id="paymentBreak"></div>
+        </section>
+
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Maiores despesas</h2>
+            <p>Top 5 do mês</p>
+          </header>
+          <div class="panel__body" id="topExpenses"></div>
+        </section>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Evolução do saldo</h2>
+            <p>Resultado mensal dos últimos 6 meses</p>
+          </header>
+          <div class="panel__body" id="chartLine"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= LANÇAMENTOS ================= -->
+    <section class="view" id="view-transactions">
+      <section class="panel">
+        <header class="panel__head panel__head--filters">
+          <h2>Histórico</h2>
+          <p id="listCount">0 lançamentos</p>
+        </header>
+
+        <div class="filters">
+          <div class="field field--grow">
+            <label for="fText">Buscar</label>
+            <input type="search" id="fText" placeholder="Descrição, ex.: supermercado" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="fMonth">Mês</label>
+            <select id="fMonth"></select>
+          </div>
+          <div class="field">
+            <label for="fType">Tipo</label>
+            <select id="fType">
+              <option value="">Todos</option>
+              <option value="receita">Receita</option>
+              <option value="despesa">Despesa</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fCategory">Categoria</label>
+            <select id="fCategory"></select>
+          </div>
+          <div class="field">
+            <label for="fPayment">Pagamento</label>
+            <select id="fPayment"></select>
+          </div>
+          <button class="btn btn--ghost" id="btnClearFilters" type="button">Limpar filtros</button>
+        </div>
+
+        <div class="tablewrap">
+          <table class="table" id="txTable">
+            <thead>
+              <tr>
+                <th class="th-sort" data-sort="date">Data</th>
+                <th class="th-sort" data-sort="description">Descrição</th>
+                <th class="th-sort" data-sort="category">Categoria</th>
+                <th class="th-sort" data-sort="paymentMethod">Pagamento</th>
+                <th>Tipo</th>
+                <th>Parcela</th>
+                <th class="th-sort th-num" data-sort="amount">Valor</th>
+                <th class="th-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="txBody"></tbody>
+          </table>
+          <div class="empty" id="txEmpty" hidden>
+            <p class="empty__title">Nenhum lançamento encontrado neste mês.</p>
+            <p class="empty__text">Registre uma entrada ou saída para começar a acompanhar o mês.</p>
+            <button class="btn btn--primary" data-new type="button"><span aria-hidden="true">+</span> Adicionar lançamento</button>
+          </div>
+        </div>
+
+        <footer class="table__foot" id="txFoot"></footer>
+      </section>
+    </section>
+
+    <!-- ================= FUTURO ================= -->
+    <section class="view" id="view-future">
+      <div class="grid grid--2">
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Comprometido nos próximos meses</h2>
+            <p>Despesas já lançadas, incluindo parcelas</p>
+          </header>
+          <div class="panel__body" id="futureList"></div>
+        </section>
+
+        <section class="panel">
+          <header class="panel__head">
+            <h2>Compras parceladas em aberto</h2>
+            <p>Parcelas que ainda vão vencer</p>
+          </header>
+          <div class="panel__body" id="openInstallments"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <header class="panel__head">
+          <h2>Próximas despesas</h2>
+          <p>Detalhe dos lançamentos futuros</p>
+        </header>
+        <div class="panel__body" id="futureDetail"></div>
+      </section>
+    </section>
+
+  </main>
+</div>
+
+<!-- ---------- Navegação mobile ---------- -->
+<nav class="tabbar" aria-label="Seções">
+  <button class="tabbar__item is-active" data-view="dashboard">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg><span>Painel</span>
+  </button>
+  <button class="tabbar__item" data-view="transactions">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg><span>Lançamentos</span>
+  </button>
+  <button class="tabbar__fab" id="btnNewMobile" type="button" aria-label="Novo lançamento">+</button>
+  <button class="tabbar__item" data-view="future">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 8.5h17M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Futuro</span>
+  </button>
+  <button class="tabbar__item" id="btnDataMobile" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zm8 6c0 1.7-3.6 3-8 3s-8-1.3-8-3v6c0 1.7 3.6 3 8 3s8-1.3 8-3z"/></svg><span>Dados</span>
+  </button>
+</nav>
+
+<!-- ============ MODAL: LANÇAMENTO ============ -->
+<div class="overlay" id="txOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="txModalTitle">
+    <header class="modal__head">
+      <h2 id="txModalTitle">Novo lançamento</h2>
+      <button class="iconbtn" data-close type="button" aria-label="Fechar">✕</button>
+    </header>
+
+    <form class="modal__body" id="txForm" novalidate>
+      <input type="hidden" id="txId">
+      <input type="hidden" id="txGroupId">
+
+      <div class="segmented" role="radiogroup" aria-label="Tipo do lançamento">
+        <button type="button" class="segmented__opt is-active" data-type="despesa" role="radio" aria-checked="true">Despesa</button>
+        <button type="button" class="segmented__opt" data-type="receita" role="radio" aria-checked="false">Receita</button>
+      </div>
+
+      <div class="field">
+        <label for="txDescription">Descrição</label>
+        <input type="text" id="txDescription" maxlength="80" placeholder="Supermercado" autocomplete="off">
+        <p class="error" data-error="description"></p>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="txAmount" id="labelAmount">Valor</label>
+          <div class="input-money">
+            <span>R$</span>
+            <input type="text" id="txAmount" inputmode="numeric" placeholder="0,00" autocomplete="off">
+          </div>
+          <p class="error" data-error="amount"></p>
+        </div>
+        <div class="field">
+          <label for="txDate">Data</label>
+          <div class="input-date">
+            <input type="text" id="txDate" inputmode="numeric" maxlength="10"
+                   placeholder="DD-MM-AAAA" autocomplete="off">
+            <button type="button" class="input-date__btn" id="txDatePick" aria-label="Escolher no calendário">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                <path d="M7 3v3M17 3v3M3.5 9.5h17M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>
+              </svg>
+            </button>
+            <input type="date" id="txDateNative" class="input-date__native" tabindex="-1" aria-hidden="true">
+          </div>
+          <p class="error" data-error="date"></p>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="txCategory">Categoria <span class="opt" id="optCategory" hidden>opcional</span></label>
+          <select id="txCategory"></select>
+          <p class="error" data-error="category"></p>
+        </div>
+        <div class="field">
+          <label for="txPayment">Forma de pagamento <span class="opt" id="optPayment" hidden>opcional</span></label>
+          <select id="txPayment"></select>
+          <p class="error" data-error="paymentMethod"></p>
+        </div>
+      </div>
+
+      <div class="installments" id="installBlock">
+        <label class="switch">
+          <input type="checkbox" id="txInstall">
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text">Compra parcelada?</span>
+        </label>
+
+        <div class="installments__body" id="installFields" hidden>
+          <div class="row">
+            <div class="field">
+              <label for="txParts">Quantidade de parcelas</label>
+              <input type="number" id="txParts" min="2" max="120" step="1" value="12">
+              <p class="error" data-error="installments"></p>
+            </div>
+            <div class="field">
+              <label>Cada parcela</label>
+              <output class="preview" id="installPreview">—</output>
+            </div>
+          </div>
+          <p class="hint" id="installHint">O valor informado é o total da compra. As parcelas são lançadas uma por mês, a partir da data escolhida.</p>
+        </div>
+      </div>
+
+      <div class="scope" id="scopeBlock" hidden>
+        <p class="scope__title">Esta é uma parcela de <b id="scopeName">—</b>. O que deseja alterar?</p>
+        <label class="radio"><input type="radio" name="editScope" value="one" checked><span>Somente esta parcela</span></label>
+        <label class="radio"><input type="radio" name="editScope" value="all"><span>A compra inteira (recria as parcelas)</span></label>
+      </div>
+    </form>
+
+    <footer class="modal__foot">
+      <button class="btn btn--ghost" data-close type="button">Cancelar</button>
+      <button class="btn btn--primary" id="btnSave" type="button">Salvar lançamento</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ MODAL: CONFIRMAÇÃO ============ -->
+<div class="overlay" id="confirmOverlay" hidden>
+  <div class="modal modal--sm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <header class="modal__head">
+      <h2 id="confirmTitle">Confirmar</h2>
+      <button class="iconbtn" data-close type="button" aria-label="Fechar">✕</button>
+    </header>
+    <div class="modal__body" id="confirmBody"></div>
+    <footer class="modal__foot" id="confirmFoot"></footer>
+  </div>
+</div>
+
+<!-- ============ MODAL: DADOS ============ -->
+<div class="overlay" id="dataOverlay" hidden>
+  <div class="modal modal--sm" role="dialog" aria-modal="true" aria-labelledby="dataTitle">
+    <header class="modal__head">
+      <h2 id="dataTitle">Dados</h2>
+      <button class="iconbtn" data-close type="button" aria-label="Fechar">✕</button>
+    </header>
+    <div class="modal__body">
+      <p class="datastat" id="dataStat">—</p>
+      <div class="syncstatus" id="syncStatus" hidden>
+        <span class="syncstatus__dot" id="syncDot"></span>
+        <span id="syncText">—</span>
+      </div>
+      <div class="datalist">
+        <button class="dataitem" id="btnSyncNow" type="button" hidden>
+          <b>Sincronizar agora</b><span>Busca o que foi feito em outros aparelhos e envia o que está só aqui.</span>
+        </button>
+        <button class="dataitem" id="btnChangePin" type="button" hidden>
+          <b>Trocar PIN neste aparelho</b><span>Esquece o PIN salvo e pede para digitar de novo.</span>
+        </button>
+        <button class="dataitem" id="btnExport" type="button">
+          <b>Exportar backup</b><span>Baixa um arquivo .json com todos os lançamentos.</span>
+        </button>
+        <button class="dataitem" id="btnImport" type="button">
+          <b>Importar backup</b><span>Substitui os dados atuais pelos do arquivo.</span>
+        </button>
+        <button class="dataitem dataitem--warn" id="btnClearDemo" type="button">
+          <b>Limpar dados de demonstração</b><span>Remove apenas os lançamentos de exemplo.</span>
+        </button>
+        <button class="dataitem dataitem--danger" id="btnClearAll" type="button">
+          <b>Apagar tudo</b><span>Remove todos os lançamentos salvos neste navegador.</span>
+        </button>
+      </div>
+      <input type="file" id="fileInput" accept="application/json" hidden>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- ============ MÓDULOS ============ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/utils.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/transactions.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
