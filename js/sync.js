@@ -16,11 +16,17 @@ FIN.Sync = (function () {
   // o PIN certo no cabeçalho x-app-pin.
   var SUPABASE_URL = 'https://nuncjwdswhcfjlwlnjhx.supabase.co';
   var SUPABASE_ANON_KEY = 'sb_publishable_gV7DnXXVfZDd_6laI3G9eA_zhNJD1OX';
-  var PIN_KEY = 'caixa:v1:pin';
 
-  var client = null;   // cliente autenticado com o PIN (recriado se o PIN mudar)
+  var PIN_KEY = 'caixa:v1:pin';
+  // Exclusões feitas neste aparelho que ainda não foram confirmadas na
+  // nuvem (ex.: apagou sem internet). Ficam guardadas até a marca de
+  // exclusão colar lá, e nesse meio tempo o item nunca reaparece aqui.
+  var TOMB_KEY = 'caixa:v1:tombstones';
+
+  var client = null;
   var pinCache = null;
 
+  /* ---------- disponibilidade e PIN ---------- */
   function isConfigured() {
     return typeof window.supabase !== 'undefined' && !!window.supabase.createClient;
   }
@@ -37,8 +43,8 @@ FIN.Sync = (function () {
 
   function setPin(value) {
     pinCache = value;
-    try { window.localStorage.setItem(PIN_KEY, value); } catch (e) { /* sem storage disponível */ }
-    client = null; // força recriar o cliente com o cabeçalho novo
+    try { window.localStorage.setItem(PIN_KEY, value); } catch (e) { /* sem storage */ }
+    client = null; // recria o cliente com o cabeçalho novo
   }
 
   function clearPin() {
@@ -60,10 +66,6 @@ FIN.Sync = (function () {
     return client;
   }
 
-  /**
-   * Confirma um PIN chamando a função do banco (check_app_pin), sem
-   * guardar nada ainda. Resolve true/false; nunca lança erro.
-   */
   function verifyPin(candidate) {
     if (!isConfigured()) return Promise.resolve(false);
     try {
@@ -76,10 +78,26 @@ FIN.Sync = (function () {
     }
   }
 
-  /* ------------------------------------------------------------------
-     Conversão entre o formato usado no app (camelCase, installment
-     aninhado) e as colunas da tabela no Postgres (snake_case, plano).
-     ------------------------------------------------------------------ */
+  /* ---------- exclusões pendentes ---------- */
+  function readIdList(key) {
+    try { return JSON.parse(window.localStorage.getItem(key)) || []; } catch (e) { return []; }
+  }
+  function writeIdList(key, ids) {
+    try { window.localStorage.setItem(key, JSON.stringify(ids)); } catch (e) { /* ignorado */ }
+  }
+  function getTombstones() { return readIdList(TOMB_KEY); }
+  function addTombstones(ids) {
+    var set = {};
+    getTombstones().concat(ids || []).forEach(function (id) { if (id) set[id] = true; });
+    writeIdList(TOMB_KEY, Object.keys(set));
+  }
+  function clearTombstones(ids) {
+    var drop = {};
+    (ids || []).forEach(function (id) { drop[id] = true; });
+    writeIdList(TOMB_KEY, getTombstones().filter(function (id) { return !drop[id]; }));
+  }
+
+  /* ---------- conversão app <-> banco ---------- */
   function toRow(t) {
     return {
       id: t.id,
@@ -94,7 +112,8 @@ FIN.Sync = (function () {
       installment_group_id: t.installment ? t.installment.groupId : null,
       installment_total_amount: t.installment ? t.installment.totalAmount : null,
       demo: !!t.demo,
-      created_at: t.createdAt || new Date().toISOString()
+      created_at: t.createdAt || new Date().toISOString(),
+      deleted_at: null
     };
   }
 
@@ -120,17 +139,20 @@ FIN.Sync = (function () {
     };
   }
 
-  /* ------------------------------------------------------------------
-     Operações remotas — todas "best-effort": se falharem (sem
-     internet, PIN mudou, etc.) resolvem false/[] em vez de travar a
-     interface. A cópia local sempre manda no que a tela mostra.
-     ------------------------------------------------------------------ */
+  /* ---------- operações remotas (todas tolerantes a falha) ---------- */
+
+  /** Devolve { live: [...], deletedIds: [...] } ou null se não deu para ler */
   function pullAll() {
     var c = getClient();
     if (!c) return Promise.resolve(null);
     return c.from('transactions').select('*').then(function (res) {
       if (res.error) throw res.error;
-      return res.data.map(fromRow);
+      var live = [], deletedIds = [];
+      res.data.forEach(function (r) {
+        if (r.deleted_at) deletedIds.push(r.id);
+        else live.push(fromRow(r));
+      });
+      return { live: live, deletedIds: deletedIds };
     }).catch(function () { return null; });
   }
 
@@ -142,48 +164,83 @@ FIN.Sync = (function () {
     }).catch(function () { return false; });
   }
 
-  function removeRemote(id) {
+  /** Marca como apagado em vez de remover, para os outros aparelhos verem */
+  function markDeleted(ids) {
     var c = getClient();
-    if (!c) return Promise.resolve(false);
-    return c.from('transactions').delete().eq('id', id)
+    if (!c || !ids || !ids.length) return Promise.resolve(false);
+    return c.from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .in('id', ids)
       .then(function (res) { return !res.error; })
       .catch(function () { return false; });
   }
+
+  function removeRemote(id) {
+    addTombstones([id]);
+    return markDeleted([id]);
+  }
+
+  /** Usado quando a exclusão abrange várias linhas de uma vez (compra parcelada) */
+  function tombstoneMany(ids) { addTombstones(ids); }
 
   function removeGroupRemote(groupId) {
     var c = getClient();
     if (!c || !groupId) return Promise.resolve(false);
-    return c.from('transactions').delete().eq('installment_group_id', groupId)
+    return c.from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('installment_group_id', groupId)
       .then(function (res) { return !res.error; })
       .catch(function () { return false; });
   }
 
-  /** Apaga tudo na nuvem e sobe a lista informada (usado por "apagar tudo" e importação) */
+  /** Marca tudo como apagado e sobe a lista nova (usado em "apagar tudo" e importação) */
   function replaceAllRemote(list) {
     var c = getClient();
     if (!c) return Promise.resolve(false);
-    return c.from('transactions').delete().neq('id', '__none__')
-      .then(function () { return pushMany(list); })
+    return c.from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .neq('id', '__none__')
+      .then(function () { return list && list.length ? pushMany(list) : true; })
       .catch(function () { return false; });
   }
 
   /**
-   * Busca a nuvem, resolve conflitos com o que existe localmente
-   * (o registro com updatedAt/createdAt mais recente vence) e grava o
-   * resultado combinado como a nova cópia local. Devolve a lista final,
-   * ou null se não havia como sincronizar (offline, sem PIN, etc.).
+   * Junta nuvem e cópia local.
    *
-   * Simplificação assumida: como o app é de uso pessoal em poucos
-   * aparelhos, "o mais recente vence" é suficiente. Editar o MESMO
-   * lançamento em dois aparelhos ao mesmo tempo, offline nos dois,
-   * não é um caso tratado (o que for sincronizado por último apaga a
-   * outra edição) — na prática isso quase nunca acontece no dia a dia.
+   * A regra central: exclusão é um FATO registrado na nuvem (deleted_at),
+   * não a ausência de uma linha. Por isso um lançamento que existe só
+   * aqui é sempre um lançamento novo daqui — pode subir sem medo — e um
+   * lançamento marcado como apagado some em todos os aparelhos, mesmo
+   * que este aparelho nunca tenha sincronizado antes.
+   *
+   * Conflito de edição do mesmo lançamento em dois aparelhos: vence o
+   * que tiver updatedAt mais recente. Como o uso é pessoal e em poucos
+   * aparelhos, isso basta; edições simultâneas do mesmo item, offline
+   * nos dois, não são um caso tratado.
    */
   function mergeAndSync() {
     if (!isConfigured() || !hasPin() || !isOnline()) return Promise.resolve(null);
 
     return pullAll().then(function (remote) {
       if (remote === null) return null; // sem conexão com o banco agora
+
+      var deleted = {};
+      remote.deletedIds.forEach(function (id) { deleted[id] = true; });
+
+      // exclusões feitas aqui que talvez não tenham chegado lá
+      var tomb = getTombstones();
+      if (tomb.length) {
+        var liveIds = {};
+        remote.live.forEach(function (r) { liveIds[r.id] = true; });
+
+        var pending = tomb.filter(function (id) { return liveIds[id]; });
+        if (pending.length) markDeleted(pending); // tenta de novo agora
+
+        var confirmed = tomb.filter(function (id) { return !liveIds[id]; });
+        if (confirmed.length) clearTombstones(confirmed);
+
+        tomb.forEach(function (id) { deleted[id] = true; });
+      }
 
       var local = FIN.Storage.all();
       var byId = {};
@@ -193,7 +250,8 @@ FIN.Sync = (function () {
       var toPush = [];
       var seen = {};
 
-      remote.forEach(function (r) {
+      remote.live.forEach(function (r) {
+        if (deleted[r.id]) return;      // apagado aqui, ainda vivo lá: já pedimos a exclusão
         seen[r.id] = true;
         var l = byId[r.id];
         if (!l) { merged.push(r); return; }
@@ -204,7 +262,10 @@ FIN.Sync = (function () {
       });
 
       local.forEach(function (l) {
-        if (!seen[l.id]) { merged.push(l); toPush.push(l); }
+        if (seen[l.id]) return;
+        if (deleted[l.id]) return;      // outro aparelho apagou: não ressuscita
+        merged.push(l);                 // só existe aqui: é novo, sobe
+        toPush.push(l);
       });
 
       FIN.Storage.saveAll(merged);
@@ -223,8 +284,10 @@ FIN.Sync = (function () {
     verifyPin: verifyPin,
     pullAll: pullAll,
     pushMany: pushMany,
+    markDeleted: markDeleted,
     removeRemote: removeRemote,
     removeGroupRemote: removeGroupRemote,
+    tombstoneMany: tombstoneMany,
     replaceAllRemote: replaceAllRemote,
     mergeAndSync: mergeAndSync
   };

@@ -169,7 +169,9 @@
         FIN.Sync.removeRemote(id);
         UI.toast('Parcela excluída.', 'ok');
       } else {
+        var groupIds = group.map(function (g) { return g.id; });
         var res = T.removeGroup(tx.installment.groupId);
+        FIN.Sync.tombstoneMany(groupIds);
         FIN.Sync.removeGroupRemote(tx.installment.groupId);
         UI.toast(res.count + ' parcelas excluídas.', 'ok');
       }
@@ -203,8 +205,30 @@
     UI.openOverlay('#dataOverlay');
   }
 
+  /**
+   * Sincroniza sozinho: ao voltar a internet, ao reabrir/voltar para a
+   * aba (é quando o usuário costuma querer ver o que mudou no outro
+   * aparelho) e periodicamente enquanto a aba estiver visível.
+   */
+  function startAutoSync() {
+    if (!FIN.Sync.isConfigured()) return;
+
+    window.addEventListener('online', function () { syncNow(true); });
+
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) syncNow(true);
+    });
+    window.addEventListener('focus', function () { syncNow(true); });
+
+    setInterval(function () {
+      if (!document.hidden) syncNow(true);
+    }, 45000);
+  }
+
   function syncNow(silent) {
     if (!FIN.Sync.isConfigured()) return;
+    // não redesenha a tela por baixo de um formulário aberto
+    if (silent && U.qsa('.overlay:not([hidden])').length) return;
     if (!silent) UI.toast('Sincronizando…');
     FIN.Sync.mergeAndSync().then(function (merged) {
       if (merged === null) {
@@ -494,7 +518,25 @@
     UI.bindFormBehaviour();
     bindEvents();
 
-    var seeded = T.seedDemoIfEmpty();
+    startAutoSync();
+
+    // Com nuvem configurada: primeiro busca o que já existe lá (pode ser
+    // este o SEGUNDO aparelho, com a nuvem já cheia de dados reais). Só
+    // depois disso, se ainda estiver tudo vazio, carrega a demonstração —
+    // nunca antes, senão cada aparelho novo cria sua própria demo e
+    // duplica tudo ao sincronizar.
+    if (FIN.Sync.isConfigured() && FIN.Sync.hasPin()) {
+      FIN.Sync.mergeAndSync().then(function () {
+        finishStartup(T.seedDemoIfEmpty());
+      });
+    } else {
+      finishStartup(T.seedDemoIfEmpty());
+    }
+  }
+
+  function finishStartup(seeded) {
+    // se acabou de semear a demonstração agora, envia para a nuvem também
+    if (seeded) FIN.Sync.pushMany(S.all().filter(function (t) { return t.demo; }));
 
     // abre no mês mais recente com dados, ou no mês atual
     var months = T.availableMonths(S.all());
@@ -510,10 +552,6 @@
     if (!S.isAvailable) {
       UI.toast('Este navegador bloqueou o armazenamento local: os dados não serão salvos.', 'err');
     }
-
-    // primeira sincronização da sessão, silenciosa (sem toast de sucesso)
-    if (FIN.Sync.isConfigured() && FIN.Sync.hasPin()) syncNow(true);
-    window.addEventListener('online', function () { syncNow(true); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
