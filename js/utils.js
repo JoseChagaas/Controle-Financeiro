@@ -5,13 +5,14 @@
 window.FIN = window.FIN || {};
 
 FIN.Config = {
-  categories: ['Pessoal', 'Trabalho', 'Casa', 'Hyper Logic 3D'],
+  categories: ['Pessoal', 'Trabalho', 'Casa', 'Carro', 'Hyper Logic 3D'],
   payments: ['Inter (N)', 'Inter (J)', 'Nubank (N)', 'Bradesco', 'Mercado Pago', 'Pessoal'],
   // Cores usadas em gráficos e legendas (batem com as variáveis do CSS)
   categoryColors: {
     'Pessoal': 'var(--cat-pessoal)',
     'Trabalho': 'var(--cat-trabalho)',
     'Casa': 'var(--cat-casa)',
+    'Carro': 'var(--cat-carro)',
     'Hyper Logic 3D': 'var(--cat-hyper)',
     'Sem categoria': 'var(--muted)'
   },

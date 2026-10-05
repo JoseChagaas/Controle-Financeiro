@@ -31,6 +31,7 @@
   --cat-pessoal:  #4f46e5;
   --cat-trabalho: #0e7490;
   --cat-casa:     #b45309;
+  --cat-carro:    #475569;
   --cat-hyper:    #9333ea;
 
   --r-sm: 8px;
@@ -71,6 +72,7 @@
   --cat-pessoal:  #8b85ff;
   --cat-trabalho: #38bdf8;
   --cat-casa:     #f0b055;
+  --cat-carro:    #9aa8bd;
   --cat-hyper:    #c084fc;
 
   --balance-bg: linear-gradient(158deg, #1a2b45, #0d1626);
@@ -390,6 +392,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .cat[data-cat="Pessoal"]::before        { background: var(--cat-pessoal); }
 .cat[data-cat="Trabalho"]::before       { background: var(--cat-trabalho); }
 .cat[data-cat="Casa"]::before           { background: var(--cat-casa); }
+.cat[data-cat="Carro"]::before          { background: var(--cat-carro); }
 .cat[data-cat="Hyper Logic 3D"]::before { background: var(--cat-hyper); }
 
 /* --- filtros --- */
