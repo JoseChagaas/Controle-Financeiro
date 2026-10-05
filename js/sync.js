@@ -66,15 +66,28 @@ FIN.Sync = (function () {
     return client;
   }
 
+  /**
+   * Confere o PIN no banco. Devolve { ok, reason }, com reason em:
+   *   'ok'          — PIN correto
+   *   'wrong'       — PIN errado
+   *   'unreachable' — não deu para falar com o banco (sem internet, ou o
+   *                   projeto do Supabase pausado por inatividade). É
+   *                   importante separar isso de 'wrong': dizer "PIN
+   *                   incorreto" quando o servidor é que está fora faz o
+   *                   usuário achar que esqueceu a própria senha.
+   */
   function verifyPin(candidate) {
-    if (!isConfigured()) return Promise.resolve(false);
+    if (!isConfigured()) return Promise.resolve({ ok: false, reason: 'unreachable' });
     try {
       var probe = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       return probe.rpc('check_app_pin', { input: candidate }).then(function (res) {
-        return !res.error && res.data === true;
-      }).catch(function () { return false; });
+        if (res.error) return { ok: false, reason: 'unreachable' };
+        return res.data === true
+          ? { ok: true, reason: 'ok' }
+          : { ok: false, reason: 'wrong' };
+      }).catch(function () { return { ok: false, reason: 'unreachable' }; });
     } catch (e) {
-      return Promise.resolve(false);
+      return Promise.resolve({ ok: false, reason: 'unreachable' });
     }
   }
 

@@ -482,13 +482,25 @@
 
       btn.disabled = true;
       btn.textContent = 'Verificando…';
-      FIN.Sync.verifyPin(pin).then(function (ok) {
+      FIN.Sync.verifyPin(pin).then(function (res) {
         btn.disabled = false;
         btn.textContent = 'Entrar';
-        if (!ok) { errorEl.textContent = 'PIN incorreto. Tente de novo.'; return; }
-        FIN.Sync.setPin(pin);
-        hidePinGate();
-        startApp();
+
+        if (res.ok) {
+          FIN.Sync.setPin(pin);
+          hidePinGate();
+          startApp();
+          return;
+        }
+
+        if (res.reason === 'wrong') {
+          errorEl.textContent = 'PIN incorreto. Tente de novo.';
+          return;
+        }
+
+        // servidor fora do ar: não acusar o PIN de errado
+        errorEl.textContent = 'Não foi possível falar com o servidor agora. ' +
+          'Verifique a internet e tente de novo em alguns instantes.';
       });
     });
   }

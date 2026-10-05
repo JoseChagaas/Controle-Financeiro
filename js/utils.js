@@ -6,7 +6,7 @@ window.FIN = window.FIN || {};
 
 FIN.Config = {
   categories: ['Pessoal', 'Trabalho', 'Casa', 'Hyper Logic 3D'],
-  payments: ['Inter (N)', 'Inter (J)', 'Nubank (N)', 'Bradesco', 'Mercado Pago'],
+  payments: ['Inter (N)', 'Inter (J)', 'Nubank (N)', 'Bradesco', 'Mercado Pago', 'Pessoal'],
   // Cores usadas em gráficos e legendas (batem com as variáveis do CSS)
   categoryColors: {
     'Pessoal': 'var(--cat-pessoal)',
@@ -21,6 +21,7 @@ FIN.Config = {
     'Nubank (N)': '#8a2be2',
     'Bradesco': '#cc092f',
     'Mercado Pago': '#00a5e0',
+    'Pessoal': '#0d9488',
     'Sem forma de pagamento': 'var(--muted)'
   },
   futureMonths: 6 // quantos meses adiante projetar
